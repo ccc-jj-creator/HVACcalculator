@@ -1,0 +1,271 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All Plans Financing Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="bg-white p-6 rounded-lg shadow-lg w-full max-w-4xl">
+        <h1 class="text-2xl font-bold mb-4 text-center">All Plans Financing Calculator</h1>
+
+        <!-- Input for Price -->
+        <div class="mb-4">
+            <label for="price" class="block text-sm font-medium text-gray-700">Original Price ($):</label>
+            <input type="number" id="price" class="mt-1 p-2 w-full border rounded-md" placeholder="Enter price" step="0.01" min="0">
+        </div>
+
+        <!-- Input for Manual Discount -->
+        <div class="mb-4">
+            <label for="manualDiscount" class="block text-sm font-medium text-gray-700">Manual Discount (%):</label>
+            <input type="number" id="manualDiscount" class="mt-1 p-2 w-full border rounded-md" placeholder="Enter manual discount" step="0.01" min="0" max="100">
+        </div>
+
+        <!-- Calculate Button -->
+        <button onclick="calculateAll()" class="w-full bg-blue-500 text-white p-2 rounded-md hover:bg-blue-600">Calculate for All Plans</button>
+
+        <!-- Results Table -->
+        <div id="results" class="mt-4 hidden">
+            <h2 class="text-lg font-semibold mb-2">Results for All Plans:</h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white border">
+                    <thead>
+                        <tr>
+                            <th class="px-4 py-2 border">Plan #</th>
+                            <th class="px-4 py-2 border">Rate</th>
+                            <th class="px-4 py-2 border">Term</th>
+                            <th class="px-4 py-2 border">Notes</th>
+                            <th class="px-4 py-2 border">Monthly Payment</th>
+                            <th class="px-4 py-2 border">Factored Discount</th>
+                            <th class="px-4 py-2 border">Total Discount</th>
+                            <th class="px-4 py-2 border">Sales Commission</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // CSV Data as a JavaScript array
+        const plans = [
+            { "Plan #": "", "Rate": "12.99%", "Term": "10 Years", "Payment Factor": "1.396%", "Factored Discount": "0.00%", "Notes": "" },
+            { "Plan #": "", "Rate": "15.49%", "Term": "10 Years", "Payment Factor": "1.67%", "Factored Discount": "6.75%", "Notes": "2nd Look" },
+            { "Plan #": "", "Rate": "12.99%", "Term": "15 Years", "Payment Factor": "1.149%", "Factored Discount": "0.00%", "Notes": "" },
+            { "Plan #": "", "Rate": "8.99%", "Term": "15 Years", "Payment Factor": "", "Factored Discount": "7.25%", "Notes": "Admin Buydown Required" },
+            { "Plan #": "", "Rate": "7.99%", "Term": "15 Years", "Payment Factor": "", "Factored Discount": "10.25%", "Notes": "Admin Buydown Required" },
+            { "Plan #": "", "Rate": "0%", "Term": "10 Years", "Payment Factor": "", "Factored Discount": "3.50%", "Notes": "6 month no interest, no payments" },
+            { "Plan #": "", "Rate": "0%", "Term": "10 Years", "Payment Factor": "", "Factored Discount": "5.00%", "Notes": "12 month no interest, no payments" },
+            { "Plan #": "", "Rate": "0%", "Term": "10 Years", "Payment Factor": "", "Factored Discount": "7.50%", "Notes": "18 month no interest, no payments" },
+            { "Plan #": "", "Rate": "0%", "Term": "10 Years", "Payment Factor": "", "Factored Discount": "2.00%", "Notes": "6 month no interest, with payments" },
+            { "Plan #": "", "Rate": "0%", "Term": "10 Years", "Payment Factor": "", "Factored Discount": "2.50%", "Notes": "12 month no interest, with payments" },
+            { "Plan #": "", "Rate": "0%", "Term": "10 Years", "Payment Factor": "", "Factored Discount": "6.00%", "Notes": "18 month no interest, with payments" },
+            { "Plan #": "4132", "Rate": "9.99%", "Term": "120 Months", "Payment Factor": ".0132", "Factored Discount": "0.00%", "Notes": "" },
+            { "Plan #": "4107", "Rate": "9.99%", "Term": "180 Months", "Payment Factor": ".0107", "Factored Discount": "0.00%", "Notes": "" },
+            { "Plan #": "4089", "Rate": "6.99%", "Term": "180 Months", "Payment Factor": ".0089", "Factored Discount": "4.50%", "Notes": "" },
+            { "Plan #": "4071", "Rate": "5.99%", "Term": "240 Months", "Payment Factor": ".0071", "Factored Discount": "14.00%", "Notes": "" },
+            { "Plan #": "4316", "Rate": "6.99%", "Term": "120 Months", "Payment Factor": "", "Factored Discount": "3.00%", "Notes": "3 months no interest, no payments" },
+            { "Plan #": "4632", "Rate": "9.99%", "Term": "120 Months", "Payment Factor": "", "Factored Discount": "2.00%", "Notes": "6 months no interest, no payments" },
+            { "Plan #": "2012", "Rate": "13.99%", "Term": "60 Months", "Payment Factor": "", "Factored Discount": "2.25%", "Notes": "12 months no interest, no payments" },
+            { "Plan #": "2024", "Rate": "13.99%", "Term": "60 Months", "Payment Factor": "", "Factored Discount": "8.75%", "Notes": "24 months no interest, no payments" },
+            { "Plan #": "1024", "Rate": "0%", "Term": "24 Months", "Payment Factor": "", "Factored Discount": "4.50%", "Notes": "0% interest with payments" },
+            { "Plan #": "3060", "Rate": "0%", "Term": "60 Months", "Payment Factor": "", "Factored Discount": "11.90%", "Notes": "0% interest with payments" }
+        ];
+
+        // Helper function to parse payment factor
+        function parsePaymentFactor(paymentFactor) {
+            if (!paymentFactor) return null;
+            if (paymentFactor.includes("%")) {
+                return parseFloat(paymentFactor.replace("%", "")) / 100;
+            }
+            return parseFloat(paymentFactor);
+        }
+
+        // Helper function to parse term into months
+        function parseTermToMonths(term) {
+            if (!term) return null;
+            if (term.includes("Months")) {
+                return parseInt(term.split(" ")[0]);
+            } else if (term.includes("Years")) {
+                return parseInt(term.split(" ")[0]) * 12;
+            }
+            return null;
+        }
+
+        // Helper function to parse rate to decimal
+        function parseRateToDecimal(rate) {
+            return parseFloat(rate.replace("%", "")) / 100;
+        }
+
+        // Calculate payment factor using the loan payment formula
+        function calculatePaymentFactor(annualRate, months) {
+            if (annualRate === 0) {
+                return 1 / months; // For 0% interest, payment is principal divided by number of months
+            }
+            const monthlyRate = annualRate / 12;
+            const denominator = Math.pow(1 + monthlyRate, months) - 1;
+            return (monthlyRate * Math.pow(1 + monthlyRate, months)) / denominator;
+        }
+
+        // Parse the no-pay or with-pay period from Notes
+        function parseInitialPeriod(notes) {
+            if (!notes) return { months: 0, withPay: false };
+            const match = notes.match(/(\d+) month no interest, (no payments|with payments)/);
+            if (!match) return { months: 0, withPay: false };
+            return {
+                months: parseInt(match[1]),
+                withPay: match[2] === "with payments"
+            };
+        }
+
+        function calculateAll() {
+            const price = parseFloat(document.getElementById('price').value) || 0;
+            const manualDiscount = parseFloat(document.getElementById('manualDiscount').value) || 0;
+
+            if (!price) {
+                alert("Please enter a price.");
+                return;
+            }
+
+            const tableBody = document.getElementById('resultsTableBody');
+            tableBody.innerHTML = ''; // Clear previous results
+
+            plans.forEach(plan => {
+                let monthlyPayment = "Not available";
+                const factoredDiscount = parseFloat(plan["Factored Discount"]) || 0;
+                let termMonths = parseTermToMonths(plan.Term);
+                let annualRate = parseRateToDecimal(plan.Rate);
+                const providedPaymentFactor = parsePaymentFactor(plan["Payment Factor"]);
+                const initialPeriod = parseInitialPeriod(plan.Notes);
+
+                // Use the effective rate for calculations and display
+                let effectiveRate = annualRate;
+                let displayRate = plan.Rate;
+                if (initialPeriod.months > 0 && annualRate === 0) {
+                    effectiveRate = 0.1299; // Assume 12.99% after 0% period
+                    displayRate = "12.99%"; // Simplified rate display
+                }
+
+                if (termMonths && !isNaN(annualRate)) {
+                    let paymentFactor;
+                    if (providedPaymentFactor !== null) {
+                        // Use provided payment factor if available
+                        paymentFactor = providedPaymentFactor;
+                        const monthlyPaymentValue = price * paymentFactor;
+                        monthlyPayment = `$${monthlyPaymentValue.toFixed(2)}`;
+                    } else {
+                        // Adjust for "no pay" or "with pay" periods
+                        if (initialPeriod.months > 0) {
+                            const postInitialRate = effectiveRate;
+                            if (initialPeriod.withPay) {
+                                // "With pay": Pay principal-only during initial period, then finance remainder
+                                const initialMonthlyPayment = price / termMonths; // Equal payments during 0% period
+                                const remainingBalance = price - (initialMonthlyPayment * initialPeriod.months);
+                                const remainingMonths = termMonths - initialPeriod.months;
+                                if (remainingMonths > 0) {
+                                    paymentFactor = calculatePaymentFactor(postInitialRate, remainingMonths);
+                                    const remainingMonthlyPayment = remainingBalance * paymentFactor;
+                                    monthlyPayment = `$${initialMonthlyPayment.toFixed(2)} for ${initialPeriod.months} months, then $${remainingMonthlyPayment.toFixed(2)} for ${remainingMonths} months`;
+                                } else {
+                                    monthlyPayment = `$${initialMonthlyPayment.toFixed(2)}`;
+                                }
+                            } else {
+                                // "No pay": Interest accrues during no-pay period, then finance the accrued balance
+                                const monthlyRate = postInitialRate / 12;
+                                const accruedBalance = price * Math.pow(1 + monthlyRate, initialPeriod.months);
+                                const remainingMonths = termMonths - initialPeriod.months;
+                                if (remainingMonths > 0) {
+                                    paymentFactor = calculatePaymentFactor(postInitialRate, remainingMonths);
+                                    const monthlyPaymentValue = accruedBalance * paymentFactor;
+                                    monthlyPayment = `$${monthlyPaymentValue.toFixed(2)} after ${initialPeriod.months} months`;
+                                }
+                            }
+                        } else {
+                            // Standard loan calculation
+                            paymentFactor = calculatePaymentFactor(annualRate, termMonths);
+                            const monthlyPaymentValue = price * paymentFactor;
+                            monthlyPayment = `$${monthlyPaymentValue.toFixed(2)}`;
+                        }
+                    }
+                }
+
+                // Calculate Total Discount
+                const totalDiscount = factoredDiscount + manualDiscount;
+
+                // Calculate Sales Commission
+                let commissionRate;
+                if (totalDiscount >= 0 && totalDiscount <= 4.99) {
+                    commissionRate = 0.12; // 12%
+                } else if (totalDiscount <= 9.99) {
+                    commissionRate = 0.10; // 10%
+                } else if (totalDiscount <= 14.99) {
+                    commissionRate = 0.08; // 8%
+                } else if (totalDiscount <= 35) {
+                    commissionRate = 0.06; // 6%
+                } else {
+                    commissionRate = 0.06; // 6% for 20-35%
+                }
+                const commission = price * commissionRate;
+
+                // Add row to table
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="px-4 py-2 border">${plan["Plan #"] || '-'}</td>
+                    <td class="px-4 py-2 border">${displayRate}</td>
+                    <td class="px-4 py-2 border">${plan.Term}</td>
+                    <td class="px-4 py-2 border">${plan.Notes || '-'}</td>
+                    <td class="px-4 py-2 border">${monthlyPayment}</td>
+                    <td class="px-4 py-2 border">${factoredDiscount.toFixed(2)}%</td>
+                    <td class="px-4 py-2 border">${totalDiscount.toFixed(2)}%</td>
+                    <td class="px-4 py-2 border">$${commission.toFixed(2)}</td>
+                `;
+                tableBody.appendChild(row);
+            });
+
+            // Show the results table
+            document.getElementById('results').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
